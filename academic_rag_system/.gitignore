@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+data/uploads/*
+data/db/*
+data/cache/*
+.DS_Store
+*.pptx
+*.docx
+venv/
+env/
