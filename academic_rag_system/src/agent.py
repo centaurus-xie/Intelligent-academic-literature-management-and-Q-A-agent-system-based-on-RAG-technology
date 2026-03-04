@@ -11,13 +11,31 @@ def get_chat_engine():
     """
     初始化问答引擎（使用 Qdrant 检索）
     """
+    import streamlit as st
+    
+    # 1. 加载LLM模型
     llm = get_llm()
     if not llm:
+        st.error("❌ LLM模型加载失败")
+        return None
+    else:
+        st.success("✅ LLM模型加载成功")
+    
+    # 2. 初始化Qdrant客户端
+    try:
+        client = init_qdrant_client()
+        st.success("✅ Qdrant客户端初始化成功")
+    except Exception as e:
+        st.error(f"❌ Qdrant客户端初始化失败: {e}")
         return None
     
-    # 初始化 Qdrant 和 Embedding
-    client = init_qdrant_client()
-    embedding_model = get_embedding_model()
+    # 3. 加载Embedding模型
+    try:
+        embedding_model = get_embedding_model()
+        st.success("✅ Embedding模型加载成功")
+    except Exception as e:
+        st.error(f"❌ Embedding模型加载失败: {e}")
+        return None
     
     # 自定义 Prompt
     template = """你是一个专业的学术助手。请严格根据提供的【上下文】回答【问题】。

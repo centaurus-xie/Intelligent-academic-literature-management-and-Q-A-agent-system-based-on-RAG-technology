@@ -10,20 +10,34 @@ from config import (
     QDRANT_PERSIST_PATH
 )
 
-@st.cache_resource
+# 全局变量缓存模型，避免重复加载
+_embedding_model = None
+
 def get_embedding_model():
     """
-    缓存 Embedding 模型，避免重复加载
+    获取 Embedding 模型，使用全局变量缓存
+    避免重复加载导致的长时间等待
     """
-    # 环境变量已在 config.py 中设置
-    return HuggingFaceEmbeddings(
-        model_name=EMBEDDING_MODEL_NAME,
-        model_kwargs={
-            'device': 'cpu',
-            'trust_remote_code': True
-        },
-        encode_kwargs={'normalize_embeddings': True}  # Qdrant 需要归一化向量
-    )
+    global _embedding_model
+    
+    if _embedding_model is None:
+        from config import EMBEDDING_MODEL_NAME
+        
+        # 检查是否是本地路径
+        if os.path.exists(EMBEDDING_MODEL_NAME):
+            print(f"🔍 使用本地模型：{EMBEDDING_MODEL_NAME}")
+            model_kwargs = {'device': 'cpu', 'trust_remote_code': True}
+        else:
+            print(f"🌐 使用在线模型：{EMBEDDING_MODEL_NAME}")
+            model_kwargs = {'device': 'cpu', 'trust_remote_code': True}
+        
+        _embedding_model = HuggingFaceEmbeddings(
+            model_name=EMBEDDING_MODEL_NAME,
+            model_kwargs=model_kwargs,
+            encode_kwargs={'normalize_embeddings': True}  # Qdrant 需要归一化向量
+        )
+    
+    return _embedding_model
 
 @st.cache_resource
 def init_qdrant_client():
@@ -116,28 +130,51 @@ def add_documents_to_qdrant(client, docs, embedding_model):
 def search_qdrant(client, query, embedding_model, top_k=3):
     """
     从 Qdrant 检索相关文档
+    使用新版本的 Qdrant API
     """
     # 生成查询向量
     query_vector = embedding_model.embed_query(query)
     
-    # 执行搜索
-    hits = client.search(
-        collection_name=QDRANT_COLLECTION_NAME,
-        query_vector=query_vector,
-        limit=top_k,
-        with_payload=True  # 返回元数据
-    )
+    # 执行搜索（使用新版本的API）
+    try:
+        # 方法1：尝试使用 query 方法（新版本）
+        search_results = client.query_points(
+            collection_name=QDRANT_COLLECTION_NAME,
+            query=query_vector,
+            limit=top_k,
+            with_payload=True
+        )
+        hits = search_results.points
+    except AttributeError:
+        # 方法2：如果 query_points 不存在，尝试 search 方法（旧版本）
+        try:
+            hits = client.search(
+                collection_name=QDRANT_COLLECTION_NAME,
+                query_vector=query_vector,
+                limit=top_k,
+                with_payload=True
+            )
+        except AttributeError as e:
+            raise AttributeError(f"Qdrant API 不兼容: {e}")
     
     # 转换为 LangChain 格式（兼容后续处理）
     from langchain_core.documents import Document
     results = []
     for hit in hits:
+        # 处理不同版本的返回格式
+        if hasattr(hit, 'payload'):
+            payload = hit.payload
+            score = hit.score if hasattr(hit, 'score') else 0.0
+        else:
+            payload = hit.get("payload", {})
+            score = hit.get("score", 0.0)
+        
         doc = Document(
-            page_content=hit.payload.get("content", ""),
+            page_content=payload.get("content", ""),
             metadata={
-                "source": hit.payload.get("source", ""),
-                "page": hit.payload.get("page", 0),
-                "score": hit.score
+                "source": payload.get("source", ""),
+                "page": payload.get("page", 0),
+                "score": score
             }
         )
         results.append(doc)

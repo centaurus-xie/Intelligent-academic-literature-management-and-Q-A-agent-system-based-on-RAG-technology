@@ -8,3 +8,6 @@ python-dotenv
 pymupdf
 requests
 llama-cpp-python
+latex2mathml>=3.73.0
+Pillow>=9.0.0
+numpy>=1.21.0

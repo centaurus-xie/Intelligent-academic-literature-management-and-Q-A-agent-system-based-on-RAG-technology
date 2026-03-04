@@ -13,14 +13,25 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(DB_DIR, exist_ok=True)
 
 # Embedding 模型配置（16GB 内存可用 large）
-EMBEDDING_MODEL_NAME = "BAAI/bge-large-zh-v1.5"
-# HuggingFace 镜像源配置
-HF_MIRROR_URL = "https://hf-mirror.com"  # 国内镜像源
+# 使用本地模型路径，避免重复下载
+BGE_LOCAL_PATH = os.path.join(MODEL_DIR, "bge-large-zh-v1.5")
+
+# 检查本地模型是否存在
+if os.path.exists(BGE_LOCAL_PATH) and any(os.listdir(BGE_LOCAL_PATH)):
+    EMBEDDING_MODEL_NAME = BGE_LOCAL_PATH
+    print("✅ 使用本地BGE-large模型（完全离线）")
+else:
+    EMBEDDING_MODEL_NAME = "BAAI/bge-large-zh-v1.5"
+    print("⚠️  本地模型不存在，将尝试在线下载")
+
+# 强制离线模式，避免网络连接
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["HF_DATASETS_OFFLINE"] = "1"
+
+# 镜像源配置（备用）
+HF_MIRROR_URL = "https://hf-mirror.com"
 os.environ["HF_ENDPOINT"] = HF_MIRROR_URL
-os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"  # 启用快速传输
-os.environ["TRANSFORMERS_SAFE_WEIGHTS_ONLY"] = "1"  # 强制使用 safetensors 格式
-os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "0"  # 显示进度条
-os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "600"  # 10分钟超时
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
 # Qdrant 配置
 QDRANT_COLLECTION_NAME = "academic_papers"
