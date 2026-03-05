@@ -19,8 +19,26 @@ class LibraryManager:
         if os.path.exists(self.db_path):
             try:
                 with open(self.db_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except:
+                    data = json.load(f)
+                    
+                # 确保数据格式正确
+                if "papers" not in data:
+                    data["papers"] = []
+                if "last_updated" not in data:
+                    data["last_updated"] = datetime.now().isoformat()
+                    
+                # 确保所有论文都有正确的元数据结构
+                for paper in data.get("papers", []):
+                    if "metadata" not in paper:
+                        paper["metadata"] = {}
+                    if "chunks_info" not in paper:
+                        paper["chunks_info"] = []
+                    if "status" not in paper:
+                        paper["status"] = "active"
+                    
+                return data
+            except Exception as e:
+                print(f"加载文献库失败: {e}")
                 return {"papers": [], "last_updated": datetime.now().isoformat()}
         else:
             return {"papers": [], "last_updated": datetime.now().isoformat()}
@@ -59,13 +77,15 @@ class LibraryManager:
                 continue
                 
             # 在标题、作者、文件名中搜索
+            metadata = paper.get("metadata", {})
             search_fields = [
-                paper["metadata"].get("title", ""),
-                paper["metadata"].get("author", ""),
-                paper["metadata"].get("file_name", "")
+                metadata.get("title", ""),
+                metadata.get("author", ""),
+                metadata.get("original_filename", ""),  # 修复：使用正确的字段名
+                metadata.get("file_name", "")  # 保持兼容性
             ]
             
-            if any(query.lower() in field.lower() for field in search_fields):
+            if any(query.lower() in field.lower() for field in search_fields if field):
                 results.append(paper)
         
         return results
@@ -119,16 +139,20 @@ def display_library_ui(library_manager):
         st.write(f"### 找到 {len(papers)} 篇文献")
         
         for paper in papers:
-            with st.expander(f"📄 {paper['metadata'].get('title', paper['metadata']['file_name'])}"):
+            # 安全获取标题，优先使用title，否则使用original_filename
+            title = paper['metadata'].get('title', paper['metadata'].get('original_filename', '未知文献'))
+            with st.expander(f"📄 {title}"):
                 col1, col2 = st.columns([3, 1])
                 
                 with col1:
                     st.write(f"**作者:** {paper['metadata'].get('author', '未知')}")
-                    st.write(f"**文件名:** {paper['metadata']['file_name']}")
-                    st.write(f"**页数:** {paper['metadata'].get('page_count', 0)}")
+                    # 安全获取文件名
+                    filename = paper['metadata'].get('original_filename', paper['metadata'].get('file_name', '未知文件'))
+                    st.write(f"**文件名:** {filename}")
+                    st.write(f"**页数:** {paper['metadata'].get('pages', paper['metadata'].get('page_count', 0))}")
                     st.write(f"**章节数:** {len(paper['metadata'].get('sections', []))}")
                     st.write(f"**文档块数:** {len(paper['chunks_info'])}")
-                    st.write(f"**添加时间:** {paper['added_time'][:19]}")
+                    st.write(f"**添加时间:** {paper.get('added_time', '未知')[:19] if paper.get('added_time') else '未知'}")
                 
                 with col2:
                     if st.button("🗑️ 删除", key=f"delete_{paper['id']}"):

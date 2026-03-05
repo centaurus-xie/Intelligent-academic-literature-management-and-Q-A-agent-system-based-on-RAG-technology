@@ -2,10 +2,12 @@ import os
 import streamlit as st
 # 解决 PyTorch 在 Windows 上与 Streamlit 的兼容性问题
 os.environ["PYTORCH_JIT"] = "0"  # 禁用 JIT 编译
-from src.loader import process_pdf, extract_pdf_metadata
-from src.vector_store import init_qdrant_client, get_embedding_model, add_documents_to_qdrant
+from src.pdf_processor.core import process_pdf
+from src.pdf_processor.core import extract_pdf_metadata
+from src.vector_store.qdrant_client import init_qdrant_client, get_embedding_model, add_documents_to_qdrant
 from src.agent import get_chat_engine
 from src.library_manager import get_library_manager, display_library_ui
+#from src.utils import auto_success, auto_warning, auto_error, auto_info, auto_spinner
 
 
 st.set_page_config(page_title="学术文献智能管理系统", layout="wide")
@@ -28,7 +30,17 @@ if "components_loaded" not in st.session_state:
         # 预加载Embedding模型（使用缓存）
         st.session_state.embedding_model = get_embedding_model()
         st.session_state.components_loaded = True
-        st.success("✅ 系统初始化完成！")
+        st.toast("系统初始化完成！",icon="✅")
+
+# 检查数据库状态并自动初始化引擎（解决刷新后引擎失效问题）
+if st.session_state.chat_engine is None:
+    library_manager = get_library_manager()
+    stats = library_manager.get_paper_stats()
+    if stats["total_papers"] > 0:  # 如果数据库中有文献，则初始化引擎
+        with st.spinner("🔄 检测到已有文献，正在初始化问答引擎..."):
+            st.session_state.chat_engine = get_chat_engine()
+            if st.session_state.chat_engine:
+                st.toast("问答引擎已恢复",icon="✅")
 
 # 侧边栏：文献上传、文献库管理
 tab1, tab2 = st.sidebar.tabs(["📤 上传文献", "📚 文献库"])
@@ -76,7 +88,7 @@ with tab1:
                     # 显示分块预览
                     st.subheader("📊 文档分块预览")
                     total_chunks = len(docs)
-                    avg_length = sum(len(doc.page_content) for doc in docs) / total_chunks
+                    avg_length = sum(len(doc.page_content) for doc in docs) / total_chunks if total_chunks > 0 else 0 if total_chunks > 0 else 0
                     
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -114,8 +126,8 @@ else:
     st.sidebar.warning("⚠️ 请先上传文献")
 
 # 主界面
-st.title("💬 学术文献智能助手 (Qdrant + 本地模型)")
-st.markdown("基于 **Qwen-4B** 本地大模型 + **Qdrant** 向量数据库，数据完全本地化。")
+st.title("💬奶龙学术文献智能助手")
+st.markdown("基于 **Qwen-4B** 本地大模型 和 **Qdrant** 向量数据库，数据完全本地化，请放心使用。")
 
 # 聊天历史
 for message in st.session_state.messages:

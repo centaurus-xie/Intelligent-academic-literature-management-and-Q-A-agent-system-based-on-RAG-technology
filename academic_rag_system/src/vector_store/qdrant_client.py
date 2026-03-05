@@ -9,6 +9,9 @@ from config import (
     QDRANT_VECTOR_SIZE,
     QDRANT_PERSIST_PATH
 )
+from uuid import uuid4
+import hashlib
+from langchain_core.documents import Document
 
 # 全局变量缓存模型，避免重复加载
 _embedding_model = None
@@ -72,9 +75,6 @@ def add_documents_to_qdrant(client, docs, embedding_model):
     """
     将文档添加到 Qdrant，包含去重机制
     """
-    from uuid import uuid4
-    import hashlib
-    
     points = []
     existing_hashes = set()
     
@@ -127,26 +127,30 @@ def add_documents_to_qdrant(client, docs, embedding_model):
         )
         st.success(f"✅ 成功导入 {len(points)} 个文档块")
 
+
 def search_qdrant(client, query, embedding_model, top_k=3):
     """
     从 Qdrant 检索相关文档
-    使用新版本的 Qdrant API
+    兼容多种 Qdrant API 版本
     """
     # 生成查询向量
     query_vector = embedding_model.embed_query(query)
     
-    # 执行搜索（使用新版本的API）
-    try:
-        # 方法1：尝试使用 query 方法（新版本）
-        search_results = client.query_points(
-            collection_name=QDRANT_COLLECTION_NAME,
-            query=query_vector,
-            limit=top_k,
-            with_payload=True
-        )
-        hits = search_results.points
-    except AttributeError:
-        # 方法2：如果 query_points 不存在，尝试 search 方法（旧版本）
+    # 方法1：尝试使用 query_points 方法（新版本 >=1.7.0）
+    if hasattr(client, 'query_points'):
+        try:
+            search_results = client.query_points(
+                collection_name=QDRANT_COLLECTION_NAME,
+                query=query_vector,
+                limit=top_k,
+                with_payload=True
+            )
+            hits = search_results.points
+        except Exception as e:
+            raise Exception(f"query_points 方法失败: {e}")
+    
+    # 方法2：尝试使用 search 方法（旧版本 <1.7.0）
+    elif hasattr(client, 'search'):
         try:
             hits = client.search(
                 collection_name=QDRANT_COLLECTION_NAME,
@@ -154,11 +158,14 @@ def search_qdrant(client, query, embedding_model, top_k=3):
                 limit=top_k,
                 with_payload=True
             )
-        except AttributeError as e:
-            raise AttributeError(f"Qdrant API 不兼容: {e}")
+        except Exception as e:
+            raise Exception(f"search 方法失败: {e}")
+    
+    # 方法3：都不存在，抛出明确错误
+    else:
+        raise AttributeError("QdrantClient 没有可用的搜索方法。请检查Qdrant版本。")
     
     # 转换为 LangChain 格式（兼容后续处理）
-    from langchain_core.documents import Document
     results = []
     for hit in hits:
         # 处理不同版本的返回格式
